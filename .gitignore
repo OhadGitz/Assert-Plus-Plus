@@ -361,3 +361,34 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# ---------------------------------------------------------------------------
+# CMake / Linux / macOS build artifacts
+# ---------------------------------------------------------------------------
+build/
+build-*/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Testing/
+compile_commands.json
+.cache/
+.ccls-cache/
+
+# ---------------------------------------------------------------------------
+# Editor / IDE state (cross-platform)
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# Claude Code: local-only files (never commit)
+# ---------------------------------------------------------------------------
+CLAUDE.local.md
+.claude/settings.local.json
