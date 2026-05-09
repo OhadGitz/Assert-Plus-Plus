@@ -8,11 +8,35 @@ Project guidelines for Claude Code working in this repo.
 
 ## Git workflow (non-negotiable)
 
-### Branching
+### Branching model: Git Flow / Semantic Versioning Git Branching
+
+Two long-lived branches:
+
+- **`master`** (alias `main`) — production / release-tagged. Never commit directly.
+- **`dev`** (alias `develop`) — integration branch where all feature work converges. Never commit directly.
+
+Flow:
+
+```
+        feat/x ──┐
+                 ▼
+        feat/y ──► dev ────────────► master   (release PR)
+                 ▲     (every few           ▲
+        fix/z ───┘      features)           │
+                                            └── (tag vX.Y.Z here)
+```
+
+- Feature branches **branch off `dev`** and merge back into `dev` via PR. They never branch off `master`.
+- Promotion to `master` happens periodically as a single `dev → master` release PR. SemVer tags are cut from `master`.
+- Hotfixes (`hotfix/*`) may branch off `master` directly when production is broken; they merge to **both** `master` and `dev`.
+
+### Branching rules
 
 - **Never commit on `master`, `main`, `dev`, or `develop`.** The pre-commit hook blocks this.
-- Always work on a feature branch. Create one with the `/branch` slash command, or:
+- Always work on a feature branch off `dev`. Create one with the `/branch` slash command, or:
   ```bash
+  git fetch origin dev
+  git switch dev && git pull --rebase origin dev
   git checkout -b <type>/<short-kebab-name>
   ```
 - Branch names must match `<type>/<name>`. Allowed types:
@@ -49,8 +73,11 @@ Project guidelines for Claude Code working in this repo.
 
 ### Pull requests
 
-- Every change reaches `master` via a PR. No direct merges.
-- Open PRs with the `/pr` slash command (handles push + `gh pr create`).
+- Every change reaches `dev` (and ultimately `master`) via a PR. No direct merges.
+- **Default target: `dev`.** Feature, fix, chore, docs, refactor, test, perf, style, build, ci branches all PR into `dev`.
+- **Release PRs target `master`.** Source is usually `dev` itself or a `release/*` branch cut from `dev`. Title style: `chore(release): dev → master (vX.Y.Z)`.
+- Hotfix PRs target `master` directly; a follow-up PR merges the hotfix back into `dev` so it doesn't get lost on the next release.
+- Open PRs with the `/pr` slash command — it asks for the target branch (default `dev`) and handles push + `gh pr create --base <target>`.
 - PR title: ≤70 chars, Conventional Commit style.
 - PR body: `## Summary` (1–3 bullets, why), `## Test plan` (concrete checklist).
 - Don't push to a PR branch with `--force`. If a rebase is needed, run `/sync` and resolve conflicts locally.
@@ -58,7 +85,7 @@ Project guidelines for Claude Code working in this repo.
 ### Reviewing your own work
 
 - Before `/commit`: review the diff for debug prints, commented-out code, secrets, unrelated changes.
-- Before `/pr`: re-read all commits since `master` (`git log master..HEAD`), not just the latest.
+- Before `/pr`: re-read all commits since the PR base (`git log <base>..HEAD` — usually `dev..HEAD`), not just the latest.
 
 ---
 
@@ -85,10 +112,10 @@ If a gate fails, fix the cause and re-stage. Never bypass with `--no-verify`.
 
 | Command  | What it does |
 |----------|-----------------------------------------------------------|
-| `/branch <name>` | Create + switch to a feature branch from latest `master`. |
+| `/branch <name>` | Create + switch to a feature branch from latest `dev`. |
 | `/commit`        | Stage, review the diff, draft a Conventional Commit, commit. |
-| `/pr`            | Push the branch and open a PR with a generated title + body. |
-| `/sync`          | Fetch + rebase the current branch on `origin/master`.       |
+| `/pr`            | Push the branch and open a PR; asks for target (default `dev`). |
+| `/sync`          | Fetch + rebase the current branch on `origin/dev` (or `origin/master` for release PRs). |
 
 See `.claude/commands/` for the full prompts.
 
