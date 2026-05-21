@@ -18,23 +18,53 @@ if(NOT ASSERTIVE_STACKTRACE MATCHES "^(AUTO|STD|OFF)$")
 endif()
 
 # Probe for std::stacktrace availability (skipped when OFF was explicitly chosen).
+#
+# libstdc++ keeps the stacktrace runtime in a separate helper library; the name
+# changed between releases:
+#   - GCC 13 / 14 : stdc++_libbacktrace
+#   - GCC 15+     : stdc++exp (merged with other experimental features)
+# We try both. MSVC links std_stacktrace.lib.
 set(_assertive_have_std_stacktrace OFF)
+set(_assertive_stacktrace_link "")
 if(NOT ASSERTIVE_STACKTRACE STREQUAL "OFF")
     include(CheckCXXSourceCompiles)
     set(_assertive_probe_flags_saved "${CMAKE_REQUIRED_FLAGS}")
+    set(_assertive_probe_libs_saved "${CMAKE_REQUIRED_LIBRARIES}")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /std:c++latest")
+        set(_assertive_candidate_libs "std_stacktrace")
     else()
         set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++23")
+        # Order matters: newer libstdc++ names first.
+        set(_assertive_candidate_libs "stdc++exp" "stdc++_libbacktrace" "")
     endif()
-    check_cxx_source_compiles("
+
+    set(_assertive_probe_src "
 #include <stacktrace>
 #if !defined(__cpp_lib_stacktrace) || __cpp_lib_stacktrace < 202011L
 #  error std::stacktrace feature macro not advertised
 #endif
 int main() { auto s = std::stacktrace::current(); return static_cast<int>(s.size()); }
-" _assertive_have_std_stacktrace)
+")
+
+    foreach(_lib IN LISTS _assertive_candidate_libs)
+        set(CMAKE_REQUIRED_LIBRARIES "${_lib}")
+        # Use a distinct cache var per candidate so re-probes aren't short-circuited.
+        string(REPLACE "+" "p" _slug "${_lib}")
+        string(REPLACE "" "none" _slug "${_slug}")
+        if(_lib STREQUAL "")
+            set(_slug "none")
+        endif()
+        check_cxx_source_compiles("${_assertive_probe_src}" _assertive_probe_${_slug})
+        if(_assertive_probe_${_slug})
+            set(_assertive_have_std_stacktrace ON)
+            set(_assertive_stacktrace_link "${_lib}")
+            break()
+        endif()
+    endforeach()
+
     set(CMAKE_REQUIRED_FLAGS "${_assertive_probe_flags_saved}")
+    set(CMAKE_REQUIRED_LIBRARIES "${_assertive_probe_libs_saved}")
 endif()
 
 # Resolve the active backend.
@@ -66,12 +96,10 @@ add_executable(Assertive ${_assertive_sources})
 
 if(_assertive_backend STREQUAL "std")
     set_property(TARGET Assertive PROPERTY CXX_STANDARD 23)
-    # libstdc++ keeps the stacktrace runtime in a separate helper library;
-    # MSVC ships it as std_stacktrace.lib.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_link_libraries(Assertive PRIVATE stdc++_libbacktrace)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        target_link_libraries(Assertive PRIVATE std_stacktrace)
+    # Link whichever helper library the probe selected (may be empty if the
+    # toolchain auto-links it, e.g. some libc++ configurations).
+    if(NOT _assertive_stacktrace_link STREQUAL "")
+        target_link_libraries(Assertive PRIVATE ${_assertive_stacktrace_link})
     endif()
 else()
     set_property(TARGET Assertive PROPERTY CXX_STANDARD 20)
