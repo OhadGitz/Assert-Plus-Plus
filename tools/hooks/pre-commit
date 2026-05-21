@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Pre-commit hook for Assert-Plus-Plus.
+# Installed by tools/install-hooks.sh into .git/hooks/pre-commit.
+#
+# Gates:
+#   1. Refuse commits on master/main/dev/develop.
+#   2. Refuse commits on branches with a non-standard name.
+#   3. clang-format --dry-run --Werror on staged C++ files.
+#   4. cmake --build build (must succeed) — skipped if build/ is absent.
+
+set -euo pipefail
+
+branch="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+
+# --- Gate 1: protected branches ------------------------------------
+case "$branch" in
+    master|main|dev|develop)
+        echo "pre-commit: refusing to commit directly on '$branch'." >&2
+        echo "pre-commit: create a feature branch first, e.g.:" >&2
+        echo "  git checkout -b feat/your-feature" >&2
+        exit 1
+        ;;
+esac
+
+# --- Gate 2: branch naming convention ------------------------------
+# Allowed prefixes:
+#   feat|feature       new feature
+#   fix|bugfix|hotfix  bug fix
+#   chore              tooling / config / housekeeping
+#   docs               documentation
+#   refactor           internal restructuring, no behavior change
+#   test               tests only
+#   perf               performance work
+#   style              formatting / lint only
+#   build              build system / dependencies
+#   ci                 CI config
+#   private|wip        personal / unfinished (not for PR)
+#   experiment|spike   exploratory work
+#   release            release branches
+branch_re='^(feat|feature|fix|bugfix|hotfix|chore|docs|refactor|test|perf|style|build|ci|private|wip|experiment|spike|release)/[a-z0-9][a-z0-9._-]*$'
+
+if [[ ! "$branch" =~ $branch_re ]]; then
+    echo "pre-commit: branch name '$branch' is not standard." >&2
+    echo "pre-commit: expected '<type>/<short-kebab-name>'." >&2
+    echo "pre-commit: <type> must be one of:" >&2
+    echo "  feat feature fix bugfix hotfix chore docs refactor test" >&2
+    echo "  perf style build ci private wip experiment spike release" >&2
+    echo "pre-commit: rename with:  git branch -m feat/your-feature" >&2
+    exit 1
+fi
+
+# --- Gate 3: clang-format on staged C++ files ----------------------
+staged_cpp=()
+while IFS= read -r f; do
+    [[ -n "$f" ]] && staged_cpp+=("$f")
+done < <(git diff --cached \
+                  --name-only \
+                  --diff-filter=ACMR \
+                  -- '*.cpp' '*.h' '*.hpp' '*.cc' '*.cxx')
+
+if (( ${#staged_cpp[@]} > 0 )); then
+    if ! command -v clang-format >/dev/null 2>&1; then
+        echo "pre-commit: clang-format not on PATH; skipping format check." >&2
+    elif ! clang-format --dry-run --Werror "${staged_cpp[@]}"; then
+        echo "" >&2
+        echo "pre-commit: clang-format check failed." >&2
+        echo "pre-commit: run the following, then re-stage:" >&2
+        echo "  clang-format -i ${staged_cpp[*]}" >&2
+        exit 1
+    fi
+fi
+
+# --- Gate 4: build must pass ---------------------------------------
+if [[ -d build ]]; then
+    if ! cmake --build build >/dev/null; then
+        echo "pre-commit: build failed. Fix the build before committing." >&2
+        exit 1
+    fi
+fi
+
+exit 0
