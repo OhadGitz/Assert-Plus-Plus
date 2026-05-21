@@ -17,16 +17,63 @@ if(NOT ASSERTIVE_STACKTRACE MATCHES "^(AUTO|STD|OFF)$")
         "ASSERTIVE_STACKTRACE must be AUTO, STD, or OFF (got '${ASSERTIVE_STACKTRACE}')")
 endif()
 
-if(ASSERTIVE_STACKTRACE STREQUAL "STD")
-    message(FATAL_ERROR
-        "ASSERTIVE_STACKTRACE=STD requires the std backend, which is introduced in a follow-up PR. Use AUTO or OFF for now.")
+# Probe for std::stacktrace availability (skipped when OFF was explicitly chosen).
+set(_assertive_have_std_stacktrace OFF)
+if(NOT ASSERTIVE_STACKTRACE STREQUAL "OFF")
+    include(CheckCXXSourceCompiles)
+    set(_assertive_probe_flags_saved "${CMAKE_REQUIRED_FLAGS}")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /std:c++latest")
+    else()
+        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++23")
+    endif()
+    check_cxx_source_compiles("
+#include <stacktrace>
+#if !defined(__cpp_lib_stacktrace) || __cpp_lib_stacktrace < 202011L
+#  error std::stacktrace feature macro not advertised
+#endif
+int main() { auto s = std::stacktrace::current(); return static_cast<int>(s.size()); }
+" _assertive_have_std_stacktrace)
+    set(CMAKE_REQUIRED_FLAGS "${_assertive_probe_flags_saved}")
 endif()
 
-# AUTO and OFF both ship only the no-op default in this PR; AUTO is upgraded to
-# probe __cpp_lib_stacktrace in the follow-up.
+# Resolve the active backend.
+if(ASSERTIVE_STACKTRACE STREQUAL "STD")
+    if(NOT _assertive_have_std_stacktrace)
+        message(FATAL_ERROR
+            "ASSERTIVE_STACKTRACE=STD requires a toolchain with working <stacktrace>, but the probe failed. Use AUTO or OFF, or upgrade the toolchain.")
+    endif()
+    set(_assertive_backend "std")
+elseif(ASSERTIVE_STACKTRACE STREQUAL "AUTO")
+    if(_assertive_have_std_stacktrace)
+        set(_assertive_backend "std")
+    else()
+        set(_assertive_backend "off")
+    endif()
+else()
+    set(_assertive_backend "off")
+endif()
 
-# Add source to this project's executable.
-add_executable (Assertive "Assertive.cpp" "Assertive.h")
+message(STATUS "Assertive stack trace backend: ${_assertive_backend}")
 
-set_property(TARGET Assertive PROPERTY CXX_STANDARD 20)
+# Assemble the source list.
+set(_assertive_sources "Assertive.cpp" "Assertive.h")
+if(_assertive_backend STREQUAL "std")
+    list(APPEND _assertive_sources "stack_std.cpp")
+endif()
+
+add_executable(Assertive ${_assertive_sources})
+
+if(_assertive_backend STREQUAL "std")
+    set_property(TARGET Assertive PROPERTY CXX_STANDARD 23)
+    # libstdc++ keeps the stacktrace runtime in a separate helper library;
+    # MSVC ships it as std_stacktrace.lib.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_libraries(Assertive PRIVATE stdc++_libbacktrace)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_link_libraries(Assertive PRIVATE std_stacktrace)
+    endif()
+else()
+    set_property(TARGET Assertive PROPERTY CXX_STANDARD 20)
+endif()
 # TODO: Add tests and install targets if needed.
