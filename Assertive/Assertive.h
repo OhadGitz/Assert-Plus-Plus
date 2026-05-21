@@ -3,10 +3,37 @@
 #include <string_view>
 #include <string>
 #include <source_location>
+#include <vector>
 
 void set_assert_vars(std::string_view a, std::string_view b, std::string_view comp);
 void set_assert_vars(std::string_view a);
 void on_assert_failed(char const* expr, const std::source_location = std::source_location::current());
+
+// --- stack-tracing extension point -----------------------------------------
+//
+// `on_assert_failed` consults the installed `stack_capture_fn`. If it returns
+// a non-empty vector, the frames are appended to the failure output.
+//
+// The library ships with a no-op default (`no_stack_capture`) so behavior is
+// unchanged unless a backend is enabled at CMake time or a custom capture is
+// installed at runtime via `set_stack_capture`.
+//
+// Lifetime of `string_view` members: the capture function owns the underlying
+// storage; the library copies/consumes the views during the on_assert_failed
+// call and does not retain them afterwards. Process-global; not safe to swap
+// concurrently with assertion firing.
+
+struct stack_frame
+{
+    std::string_view function;
+    std::string_view file;
+    int              line;
+};
+
+using stack_capture_fn = std::vector<stack_frame>(*)();
+
+stack_capture_fn          set_stack_capture(stack_capture_fn);
+std::vector<stack_frame>  no_stack_capture();
 
 
 #define ASSERT(expr) ((impl::assert_t{} < expr) ?                                   \
