@@ -1,12 +1,18 @@
 ﻿#pragma once
 
 #include <string_view>
-#include <string>
+#include <format>
 #include <source_location>
 
 void set_assert_vars(std::string_view a, std::string_view b, std::string_view comp);
 void set_assert_vars(std::string_view a);
 void on_assert_failed(char const* expr, const std::source_location = std::source_location::current());
+
+// std::formattable is C++23 only; this is the C++20-portable equivalent.
+template <class T>
+concept formattable_for_assert = requires(T const& v) {
+    std::format("{}", v);
+};
 
 
 #define ASSERT(expr) ((impl::assert_t{} < expr) ?                                   \
@@ -18,12 +24,17 @@ namespace impl {
 
 // todo: avoid the copy paste with spaceship operator?
 // todo: static assert that op exists for better errors
-// todo: factor out the to_string with user defined formatting
 #define DEFINE_BINARY_OPERATOR(op)                                              \
     template <class B> bool operator op(B&& b) const {                              \
         if (a op b)                                                                 \
             return true;                                                            \
-        set_assert_vars(std::to_string(a), std::to_string(b), #op);                 \
+        static_assert(formattable_for_assert<A>,                                    \
+            "ASSERT: left operand type has no std::formatter<T> specialization. "   \
+            "Specialize std::formatter for your type.");                            \
+        static_assert(formattable_for_assert<B>,                                    \
+            "ASSERT: right operand type has no std::formatter<T> specialization. " \
+            "Specialize std::formatter for your type.");                            \
+        set_assert_vars(std::format("{}", a), std::format("{}", b), #op);           \
         return false;}                                                              \
 
     template <class A>
@@ -32,10 +43,13 @@ namespace impl {
         A a;
 
         // for operator !
-        operator bool() const { 
+        operator bool() const {
             if(static_cast<bool>(a))
                 return true;
-            set_assert_vars(std::to_string(a));
+            static_assert(formattable_for_assert<A>,
+                "ASSERT: operand type has no std::formatter<T> specialization. "
+                "Specialize std::formatter for your type.");
+            set_assert_vars(std::format("{}", a));
             return false;
         }
 
