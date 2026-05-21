@@ -131,3 +131,15 @@ These require explicit user approval each time — do not work around them:
 - `git commit --no-verify`
 
 If you find yourself reaching for one of these, stop and tell the user what you'd do and why, then wait for them to authorize it.
+
+## Merging is the user's job — never Claude's
+
+**Claude must never merge a PR or a branch.** Merging is a shared-state action that the user performs via the GitHub UI (or by explicitly running the merge command themselves).
+
+This applies to all forms of merge, including:
+
+- `gh pr merge` (any flags, any merge strategy)
+- `git merge` (local merges)
+- REST-API workarounds via `gh api .../merges` or `gh api .../pulls/N/merge`
+
+These are denied in `.claude/settings.json` so the tool calls are blocked at the harness level. Even if a deny rule is missing, do not propose to merge — prepare the PR (refresh body, verify checks, resolve conflicts via `/sync`) and hand off to the user.

@@ -47,6 +47,11 @@
       "Bash(git reset --hard *)",
       "Bash(git clean -fd *)",
       "Bash(git commit --no-verify *)",
+      "Bash(git merge)",
+      "Bash(git merge:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh api * /merge*)",
+      "Bash(gh api * pulls/*/merge*)",
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~*)"
     ]
