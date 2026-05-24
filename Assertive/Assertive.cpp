@@ -12,8 +12,10 @@ namespace
         // Heuristic: drop frames that come from this library so the reported
         // trace starts at user code. Matches the default backend's symbol
         // shapes; user-provided backends can pre-trim themselves if desired.
-        return fn.find("impl::")           != std::string_view::npos
-            || fn.find("on_assert_failed") != std::string_view::npos;
+        return fn.find("impl::")             != std::string_view::npos
+            || fn.find("on_assert_failed")   != std::string_view::npos
+            || fn.find("std_stack_capture")  != std::string_view::npos
+            || fn.find("no_stack_capture")   != std::string_view::npos;
     }
 }
 
